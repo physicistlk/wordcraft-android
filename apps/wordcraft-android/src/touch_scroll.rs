@@ -98,6 +98,10 @@ impl TouchScroll {
                 unit: egui::MouseWheelUnit::Point,
                 delta,
                 phase: egui::TouchPhase::Move,
+                // egui 0.37 asks what drives the scroll. These are fingers on the screen, not a
+                // trackpad, and egui's own note says touch screens scroll by dragging; the apps
+                // read the wheel event itself, so the neutral answer is the right one.
+                source: egui::MouseWheelSource::Unknown,
                 modifiers,
             });
         } else if self.scrolling && !gesture {
@@ -108,6 +112,7 @@ impl TouchScroll {
                 unit: egui::MouseWheelUnit::Point,
                 delta: egui::Vec2::ZERO,
                 phase: egui::TouchPhase::End,
+                source: egui::MouseWheelSource::Unknown,
                 modifiers,
             });
         }

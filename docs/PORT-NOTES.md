@@ -1,13 +1,142 @@
 # Port notes — WordCraft on Android
 
 Upstream: [`storytold/wordcraft`](https://github.com/storytold/wordcraft) @
-`2ffba93b5189410a415970be179dcf481092d756` (v0.5.0)
-Published APK: `wordcraft-0.5.0-arm64-v8a-v4.apk`
+`3de6ff95af86c19d67030cd96dba15cd6a45a25e` (v0.12.0)
+Published APK: `wordcraft-0.12.0-arm64-v8a-20261028.apk`
 
-The port is `apps/wordcraft-android/` (`src/lib.rs` 463 lines, `src/file_picker.rs` 403,
-`src/modifiers.rs` 202, `src/prefs_watch.rs` 134) plus **one small upstream change** — an 8-line seam
-in `crates/ui-egui/src/lib.rs` that lets a host open a second window. Everything below is the edit
-log: what was wrong, why, what changed, how far it was checked.
+The port is `apps/wordcraft-android/` plus a vendored, patched winit. Since 0.12.0 it changes **one
+tracked upstream file** — the workspace `Cargo.toml` line that selects winit from the vendor
+directory — and no application source. Everything below is the edit log: what was wrong, why, what
+changed, how far it was checked.
+
+## 2026-10-30 — Trackpad wheel + pen hover (already in the vendored winit)
+
+This port already shipped the vendored, patched winit, whose Android backend forwards
+`MotionAction::Scroll` (trackpad wheel / two-finger scroll) and `MotionAction::HoverMove`
+(mouse / stylus hover) to `MouseWheel` and `CursorMoved`. No change this milestone; the other
+five ports gained the same handling by vendoring the same winit.
+
+## 2026-10-30 — Flush preferences on suspend (`raw_input_hook`)
+
+Android never calls the exit path a swipe from Recents would need, and a paused Activity can be
+killed without warning. The shell now detects a lost-focus frame (`raw.viewports` reporting
+`focused == Some(false)`) and writes `ui.json` with `prefs_watch::Writer::store_now`, so the
+recent-documents list and window state survive a suspend. PhotoCraft and the other ports that
+persist preferences as they change are unaffected; VectorCraft gets the same treatment via
+`save_prefs`.
+
+## 2026-10-30 — Open-with and share intents (`src/intents.rs`)
+
+**The complaint:** a file tapped in a file manager, or shared from another app, never reached
+WordCraft; and there was no way to hand the current document to another app.
+
+`src/intents.rs` covers the half of that which does not need `startActivityForResult` (which
+`android-activity` 0.6.1 does not expose):
+
+- **Incoming `ACTION_VIEW`** — `getIntent().getData()` is read at startup; a `content://` URI is
+  copied to a file in the app's cache directory through `ContentResolver.openInputStream`, and the
+  shell opens that file on its first frame (`WordApp::open_file`).
+- **Incoming `ACTION_SEND`** — `EXTRA_TEXT` is written to a temp text file and opened; `EXTRA_STREAM`
+  is copied like a `VIEW` URI.
+- **Outgoing `ACTION_SEND`** — `intents::share_text` builds a chooser intent and starts it with
+  `startActivity`; no `FileProvider` is needed for text. `intents::share_file` is provided but
+  documented as needing a `FileProvider` entry in the manifest on Android 7+ (not added yet).
+
+The launching intent is read in `android_main`, stored, and consumed once in `Shell::logic`, so a
+cold start and a warm re-launch behave the same way.
+
+**Scope:** opening a file handed to the app, and sharing text. Storage Access Framework pickers
+(`ACTION_OPEN_DOCUMENT`/`ACTION_CREATE_DOCUMENT`) are not available without Java glue and remain
+deferred; the in-app picker is still the way to open or save.
+
+**Checked:** the module's host test passes, the crate compiles for `aarch64-linux-android`, and the
+host suite is 17/17. The JNI intent path has not run on a device.
+
+## 2026-10-30 — The system clipboard (`src/clipboard.rs`)
+
+**The complaint:** copy and paste worked only *inside* the app. A paragraph copied in Chrome could
+not be pasted into WordCraft, and copying in WordCraft left nothing for another app.
+
+There were two independent causes, and both had to be fixed:
+
+- **winit's Android backend has no clipboard at all** (there is no clipboard module in
+  `src/platform_impl/android/`), so `egui-winit` keeps its *in-app* simulated clipboard. Copy and
+  paste between two text fields of this app worked; anything crossing the app boundary did not.
+- **The backend never reports modifiers** (`WindowEvent::ModifiersChanged` is not emitted; see §6),
+  and `egui-winit` decides that Ctrl+C/X/V *is* a clipboard shortcut from its own modifier state.
+  On Android `is_copy_command`/`is_paste_command` are therefore always false, so the three keys
+  arrive as ordinary `Event::Key` presses and nothing ever produces `Event::Copy`, `Cut` or `Paste`.
+
+`src/clipboard.rs` closes both:
+
+- **`install(&app)`** keeps the Activity handle on the thread that runs the event loop, the same
+  per-thread arrangement `modifiers` and `prefs_watch` use.
+- **`shortcuts(raw)`** runs in `raw_input_hook`, after the touch bridge and before the app, and
+  rewrites a plain Ctrl+C/X/V press into `Event::Copy`/`Cut`/`Paste`, consuming the key press the
+  way a desktop backend does. Paste reads the **system** clipboard, so text from another app
+  arrives; an empty clipboard pushes no event (an empty paste would clear a field). Ctrl+Shift and
+  Ctrl+Alt variants are left to the app — they are different commands (Copy Merged, Paste Special).
+- **`publish(ctx)`** runs after the app's `ui` in the same frame and takes every
+  `OutputCommand::CopyText` to `ClipData.newPlainText` + `setPrimaryClip`. The command is left in
+  place, so egui-winit's in-app copy still happens — which is what keeps paste working when the
+  system clipboard is unreadable.
+- **`text()`** is the read half for the app's own Paste paths, wired in as `Services::clipboard_text`
+  (the ribbon and context-menu Paste read it, #584, rather than waiting for a key event).
+
+The JNI calls are plain `ClipboardManager`/`ClipData`: `getSystemService(Context.CLIPBOARD_SERVICE)`,
+`getPrimaryClip` → `getItemAt(0)` → `getText`, and `newPlainText` → `setPrimaryClip`. Android 10+
+allows clipboard *reads* only while the app is focused, so a pending `SecurityException` is
+described, logged and cleared rather than left to poison the next JNI call; the read then answers
+"nothing", which is also what a non-text clip answers.
+
+**Scope:** plain text only. Pictures and HTML (`ClipData` can carry both, and WordCraft's formatted
+paste would use them) need a format negotiation this does not do yet; they are named as such in the
+module's docs.
+
+**Checked:** the module's eight unit tests (the key rewriting, the empty-clipboard and
+Shift/Alt cases, the release pass-through, publishing `CopyText` and not publishing an empty copy)
+pass on the host; `cargo check -p wordcraft-android --target aarch64-linux-android` is clean. The JNI
+path itself has not run on a device — no Android device was connected for this build.
+
+## 2026-10-28 — rebased from 0.5.0 onto 0.12.0
+
+The port now targets upstream **v0.12.0** (`3de6ff9`), the newest official stable release at the time
+of the build. Seven minor upstream releases (0.6 through 0.12) changed much more than the 0.5.0 seam
+this port carried, so the rebase is an adaptation, not a mechanical re-apply:
+
+- **The `Services::new_window` seam is gone, and with it the JNI second-Activity code.** Upstream
+  0.12 opens several documents in one window and implements *View ▸ Window ▸ New Window* with
+  `craft-window`/egui viewports. winit's Android backend still has one native window per Activity, so
+  the port does not patch the upstream UI crate at all; the in-app document list (View ▸ Switch
+  Windows) is the supported way to work on two documents. The old second-Activity/process-counting
+  quit path was removed with it.
+- **`Services::file_dialog` now answers `FileDialogAnswer = Result<Vec<String>, String>`** instead of
+  `Option<String>`, and `FileDialogRequest` gained `OpenMany` (Add Font) and a starting directory on
+  `Save`. The in-app picker was extended to return every chosen path and to honour the suggested
+  start folder; `Err` lets the app fall back to its own built-in browser.
+- **`FileDialogRequest`'s filters come from upstream `open_filters`**, so the picker offers the same
+  formats the app actually opens (including the new `font` and `sources` purposes) instead of a
+  hand-kept list.
+- **`WordApp::raw_input_hook` now takes the `egui::Context`**; the shell forwards it.
+- **egui 0.37 adds `source: MouseWheelSource` to `Event::MouseWheel`**; the two-finger bridge reports
+  `Unknown` (these are fingers on the screen, not a trackpad).
+- **The vendored winit is now the fork upstream 0.12 pins** (`storytold/winit` @ `a517b384`), not
+  crates.io 0.30.13: the fork carries the IME/input changes egui 0.37 needs. The same two Android
+  patches (`MotionAction::Scroll` → `MouseWheel`, `MotionAction::HoverMove` → `CursorMoved`) were
+  re-applied to that source. The workspace's `[patch.crates-io] winit` line points at `vendor/winit`
+  instead of the git revision, which is the only tracked upstream file this port now changes.
+- **Preferences and fonts are unchanged in intent**: `ui.json` still lives in the app's data
+  directory and is written atomically while the app runs, and the `Android/media/<package>/Fonts`
+  folder still feeds the upstream `HOME`-based font scan.
+
+**Checked on Linux (2026-10-28):** `cargo check -p wordcraft-android --target aarch64-linux-android`
+passes; the workspace resolves with the vendored winit; `cargo apk build --release` produced an
+arm64-v8a APK signed with a local test key. The verification results are recorded beside the APK in
+the build output; runtime behaviour was not re-tested on a device here.
+
+The sections below are the 0.5.0-era edit log, kept for the reasoning behind fixes that still apply
+(modifiers, touch scrolling, the picker, preferences, fonts). Where a section mentions a second
+Activity or the `new_window` seam, that part is historical: upstream 0.12 replaced it.
 
 ## 1. The shell crate
 
@@ -25,6 +154,11 @@ their own way; Android is the third. Details that are load-bearing in every port
   `ui.json`.
 
 ## 2. Two documents side by side — a second Activity (`new_window`)
+
+> **Removed in the 0.12.0 rebase.** Upstream 0.12 implements *View ▸ Window ▸ New Window* with egui
+> viewports and the `Services::new_window` seam is gone (see the 2026-10-28 section above). This
+> section is kept as the edit log for the 0.5.0 port; View ▸ Switch Windows is the way to work on
+> several documents now.
 
 WordCraft's *Window ▸ New Window* command is the way to review two documents at once, and on Android
 the only thing that can show two windows of the same app is **two Activities**. The command could not
@@ -117,13 +251,15 @@ and the two legacy storage permissions capped with `max_sdk_version`. `res/value
 the same two-variant edge-to-edge theme as its siblings, needed because `targetSdkVersion 35` puts the
 app under a transparent status bar on Android 15, and `res/mipmap-*` carries the launcher icon.
 
-## Upstream file this port changes
+## Upstream file this port changes (0.12.0)
 
 | File | Change | Why |
 |---|---|---|
-| `crates/ui-egui/src/lib.rs` | `Services::new_window` (+ the `"newWindow"` handler falling back to the dialog) | lets a host open a second window; on Android that is a second Activity (§2) |
+| `Cargo.toml` | `[patch.crates-io] winit = { path = "vendor/winit" }` instead of the pinned git revision | the vendor copy carries the Android wheel/hover fix and is the same fork revision upstream pins |
 
-Nothing else upstream is touched.
+Nothing else upstream is touched. The earlier 0.5.0 port also added a `Services::new_window` seam to
+`crates/ui-egui/src/lib.rs`; upstream 0.12 has its own multi-document window handling, so that seam
+was removed rather than carried forward.
 
 ## 2026-10-13 — A vendored winit, so a mouse wheel is not swallowed
 

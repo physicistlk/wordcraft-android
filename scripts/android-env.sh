@@ -39,3 +39,17 @@ export RANLIB_x86_64_linux_android="llvm-ranlib.exe"
 
 # cc-rs also looks at the bare CC/AR when building a *host* helper (aws-lc's generators), and
 # falls back to whatever `clang` it finds; the NDK's clang.exe on PATH above is that fallback.
+
+# Android 16 requires a 16 KB page size: a native library whose ELF segments are only 4 KB
+# aligned still runs, but the system shows the user a compatibility warning on a device with
+# 16 KB pages, and Play will not accept an update that is not aligned.
+#
+# The flag has to go in RUSTFLAGS, and in exactly one token. cargo-apk does not link the cdylib
+# itself: it shells out to `ndk-build`, whose `cargo_ndk()` re-encodes RUSTFLAGS into
+# CARGO_ENCODED_RUSTFLAGS and appends its own `-Clink-arg=--target=...`. That encoding
+# *overrides* CARGO_TARGET_<triple>_RUSTFLAGS, so the flag cannot be passed there; and it
+# splits RUSTFLAGS on spaces, so a flag with a space in it is broken in two. One token, no
+# spaces, in RUSTFLAGS, is what survives to the linker.
+#
+# With NDK r27 the result is what Android 16 wants: every LOAD segment 0x4000-aligned.
+export RUSTFLAGS="-Clink-arg=-Wl,-z,max-page-size=16384"

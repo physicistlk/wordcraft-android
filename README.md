@@ -6,13 +6,13 @@ and egui interface, packaged as a NativeActivity APK for sideloading on arm64 de
 | | |
 |---|---|
 | Upstream project | [`storytold/wordcraft`](https://github.com/storytold/wordcraft) — Apache-2.0 OR MIT |
-| Pinned commit | `2ffba93` (upstream version `0.5.0`) |
+| Pinned commit | `3de6ff9` (upstream version `0.12.0`) |
 | Android package | `ai.storyteller.wordcraft` |
-| Published APK | `wordcraft-0.5.0-arm64-v8a-20261013b.apk` — 19.9 MB, arm64-v8a, signed (release **v0.1.2**, 2026-10-13) |
-| APK sha256 | `05065f17c115a5fed20f9ed6f04dcd1cd6b31bd8128e8177031e8d6f9a522ca5` |
-| Upstream files changed | 2 files (`Cargo.toml`, `crates/ui-egui/src/lib.rs`) — see [`patches/`](patches/) |
-| Vendored crates | `vendor/winit/` — required by the manifest patch, copied in with the crate |
-| New port crate | `apps/wordcraft-android/` — 1554 lines of Rust plus resources |
+| Published APK | `wordcraft-0.12.0-arm64-v8a-20261028.apk` — arm64-v8a, signed with a local test key (release **v0.2.0**, 2026-10-28) |
+| APK sha256 | recorded in `SHA256SUMS.txt` beside the built APK |
+| Upstream files changed | 1 file (`Cargo.toml`, the winit patch source) — see [`patches/`](patches/) |
+| Vendored crates | `vendor/winit/` — the pinned upstream fork plus the Android wheel/hover fix, copied in with the crate |
+| New port crate | `apps/wordcraft-android/` — the shell crate plus resources |
 
 ## What this repository is
 
@@ -34,28 +34,41 @@ struct the desktop and web shells fill, so the real engine and the real egui UI 
 ## Build it
 
 Prerequisites: Rust (rustup) with the `aarch64-linux-android` target, Android SDK + NDK r27, a
-JDK 21, and `cargo install cargo-apk`.
+JDK 21, and `cargo install cargo-apk --version 0.10.0`.
 
 ```bash
 git clone https://github.com/storytold/wordcraft.git
 cd wordcraft
-git fetch --depth 1 origin 2ffba93b5189410a415970be179dcf481092d756
+git fetch --depth 1 origin 3de6ff95af86c19d67030cd96dba15cd6a45a25e
 git checkout FETCH_HEAD                        # the exact commit this port targets
 git apply -3 /path/to/0001-wordcraft-android-port.patch
-cp -r /path/to/wordcraft-android apps/             # the shell crate from this repository
+cp -r /path/to/wordcraft-android/apps/wordcraft-android apps/
 cp -r /path/to/vendor .                        # the patched winit the manifest points at
 
 # any keystore of your own signs an installable APK; a throwaway test key is fine for sideloading
-keytool -genkeypair -keystore ks.jks -alias wordcraft -keyalg RSA -keysize 2048 -validity 10000 \
-        -storepass android -keypass android -dname "CN=Local Test, O=Local, C=US"
-export CARGO_APK_RELEASE_KEYSTORE="$PWD/ks.jks" CARGO_APK_RELEASE_KEYSTORE_PASSWORD=android
+keytool -genkeypair -keystore ks.jks -alias wordcraft -keyalg RSA -keysize 3072 -validity 10000 \
+        -dname "CN=Local Test, O=Local, C=US"
+# keytool prompts for the two passwords; put them in the environment for cargo-apk
+read -rsp "keystore password: " CARGO_APK_RELEASE_KEYSTORE_PASSWORD; echo
+export CARGO_APK_RELEASE_KEYSTORE="$PWD/ks.jks"
 cargo apk build --release -p wordcraft-android
 ```
 
-`scripts/android-env.sh` is the cross-compile environment this port was built with (the NDK linker
-and the C compiler the native dependencies need), `scripts/build-apk.sh` wraps the build, and
-`scripts/verify-apk.sh` checks the artifact: `aapt2 dump badging`, `apksigner verify`, and `llvm-nm`
-on the `.so` inside the APK.
+On Linux use the tracked scripts instead of hard-coding your SDK paths:
+
+```bash
+export ANDROID_HOME=/path/to/android-sdk JAVA_HOME=/path/to/jdk-21
+export CARGO_APK_RELEASE_KEYSTORE=/path/to/ks.jks
+export CARGO_APK_RELEASE_KEYSTORE_PASSWORD='...'
+scripts/build-apk-linux.sh
+scripts/verify-apk-linux.sh target/release/apk/wordcraft.apk wordcraft
+```
+
+`scripts/android-env-linux.sh` is the cross-compile environment (NDK clang at API 26, the C compiler
+ring/rustls need, and the JDK); `scripts/build-apk-linux.sh` wraps the build;
+`scripts/verify-apk-linux.sh` checks the artifact with `aapt2`, `apksigner`, `unzip`, `llvm-nm`,
+`file` and `sha256sum`. The original `scripts/android-env.sh`, `build-apk.sh` and `verify-apk.sh`
+remain as the Windows/MSYS environment the first releases were built in.
 
 ## Install
 
@@ -70,15 +83,16 @@ the in-app picker to reach files outside the app's own folders. Without it, Andr
 
 ## Verification status
 
-Everything below was checked on the machine this port was published from, in October 2026.
+Everything below was checked on the machine this port was published from, in October 2026; the
+0.12.0 build was checked on Linux with NDK r27 and `cargo-apk` 0.10.0.
 A tick means the check was *run*, not inferred; the wording says how far it goes.
 
 | Claim | How it was checked | Result |
 |---|---|---|
-| `patches/…patch` applies to a clean checkout of the pin | fresh `git init` + `git fetch --depth 1 origin 2ffba93b5189410a415970be179dcf481092d756` + `git apply --check` | ✅ applies cleanly |
+| `patches/…patch` applies to a clean checkout of the pin | fresh `git init` + `git fetch --depth 1 origin 3de6ff95af86c19d67030cd96dba15cd6a45a25e` + `git apply --check` | ✅ applies cleanly |
 | The assembled tree equals the tree the APK was built from | file-by-file SHA-256 (line endings normalised) over every patched file and every file of the port crate | ✅ 12 files identical, none differing |
 | The port crate compiles for Android | `cargo check -p wordcraft-android --target aarch64-linux-android`, run in a tree assembled from scratch (fresh `git fetch` of the pin, patch applied, port crate copied in) | ✅ exit 0 |
-| The port crate's own tests | `cargo test -p wordcraft-android` in the freshly assembled tree | ✅ 4/4 pass |
+| The port crate's own tests | `cargo test -p wordcraft-android` in the freshly assembled tree | ✅ 16/16 pass |
 | APK is signed and is the right artifact | `apksigner verify --verbose`, `aapt2 dump badging`, sha256 | ✅ v2/v3 signatures true, `native-code: 'arm64-v8a'`, package `ai.storyteller.wordcraft` |
 | Behaviour on real hardware | hand-testing on the porter's arm64 tablet | ⚠️ the fixes below were found and driven by that testing; each published binary is not individually re-verified here |
 
@@ -92,9 +106,13 @@ fixes. There is no automated device test in this repository.
   automated device test.
 - **All files access is a manual grant.** Until it is given, the picker can only offer the app's own
   directory (and says so on the locked root).
-- **A second window is a second Activity**, so it costs a second render surface and its own memory; on
-  a low-RAM tablet two heavy documents at once are the tablet's problem, not the app's.
 - **No audio** — `Services::audio_out` stays `None` (`cpal` has no Android backend here).
+- **The system clipboard is text only.** Copy/Paste crossed the app boundary for text;
+  pictures and HTML on the clipboard are still out of reach (`ClipData` carries them, but this
+  port does not negotiate those formats yet).
+- **View ▸ Window ▸ New Window** asks for an egui viewport; winit's Android backend has one native
+  window per Activity, so use the in-app window list (View ▸ Switch Windows) instead of a second OS
+  window. The old second-Activity trick is gone because upstream 0.12 owns multiple documents.
 - **Android 16 ignores the status-bar opt-out** used by theme variant A; the port ships variant B.
 
 

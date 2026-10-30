@@ -55,6 +55,9 @@
 //!   on `MotionEvent`, so a backend is writable, but it does not exist yet.
 //! - **No system title bar.** `integrated_titlebar` is left off, so the app keeps its own title
 //!   bar with the Quick Access Toolbar and ribbon — which is what the tablet shows, fullscreen.
+//! - **No second native window.** Upstream 0.12 turned View › Window › New Window into an egui
+//!   viewport, and winit's Android backend has one native window per Activity. The in-app
+//!   multi-document window list (View › Switch Windows) still works inside this Activity.
 //!
 //! Editing itself is unaffected: the document model, layout, the CPU rasteriser and the file
 //! formats are platform-neutral, and the fonts are `include_bytes!`d, so text works with no
@@ -66,9 +69,11 @@ use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use wordcraft_engine::Session;
-use wordcraft_ui_egui::{FileDialogRequest, Services, UiState, WordApp};
+use wordcraft_ui_egui::{FileDialogAnswer, FileDialogRequest, Services, UiState, WordApp, open_filters};
 
+mod clipboard;
 mod file_picker;
+mod intents;
 mod modifiers;
 mod prefs_watch;
 mod touch_scroll;
@@ -119,128 +124,54 @@ fn prefs_bytes(app: &WordApp) -> Vec<u8> {
 /// has nothing to match against, and listing every file on a tablet's shared storage to sort
 /// through is worse than the filter.
 fn open_extensions(purpose: &str) -> Option<Vec<String>> {
-    match purpose {
-        "picture" => file_picker::extensions(&[&["png", "jpg", "jpeg", "gif", "webp", "bmp"]]),
-        "recipients" => file_picker::extensions(&[&["csv", "tsv", "txt", "xlsx", "xlsm", "ods"]]),
-        _ => file_picker::extensions(&[&["docx", "docm", "dotx", "dotm", "doc", "dot", "odt", "rtf", "txt", "md", "html", "htm", "tex", "json"]]),
-    }
+    // The app's own filters, so a new format the app learns to open is offered here too. A `*`
+    // entry means "any file"; the picker filters by extension, so it is dropped.
+    let exts: Vec<String> = open_filters(purpose)
+        .iter()
+        .flat_map(|(_, list)| list.iter().filter(|e| **e != "*").map(|e| (*e).to_string()))
+        .collect();
+    (!exts.is_empty()).then_some(exts)
 }
 
 /// The `Services::file_dialog` hook: what the desktop shell fills with `rfd::AsyncFileDialog`.
 ///
 /// WordCraft asks for a dialog by sending a [`FileDialogRequest`] and gets a `Receiver` back; it
 /// polls that once a frame in [`WordApp::logic`] and finishes what the dialog was for when the
-/// path arrives (open the document, write it and carry on with the pending New/Open/Close,
-/// export, insert the picture, load the recipients). `None` means cancelled.
+/// paths arrive (open the document, write it and carry on with the pending New/Open/Close,
+/// export, insert the picture, load the recipients, add fonts). An empty list means cancelled;
+/// `Err` makes the app show its own built-in file browser.
 ///
 /// That is the same asynchronous contract the picker keeps, so the two are bridged with one
 /// waiting thread: the picker answers `Vec<PathBuf>`, and the thread turns it into the
-/// `Option<String>` the app is polling for. One thread per pick, and it ends with the request.
-fn file_dialog(req: FileDialogRequest) -> Receiver<Option<String>> {
-    let (kind, title, extensions, suggested) = match req {
-        FileDialogRequest::Open { purpose } => (file_picker::Kind::Open, "Open \u{2014} Android", open_extensions(&purpose), None),
-        FileDialogRequest::Save { name } => (file_picker::Kind::Save, "Save As \u{2014} Android", None, Some(name)),
+/// `FileDialogAnswer` the app is polling for. One thread per pick, and it ends with the request.
+fn file_dialog(req: FileDialogRequest) -> Receiver<FileDialogAnswer> {
+    let (kind, title, extensions, suggested, start) = match req {
+        FileDialogRequest::Open { purpose } => {
+            (file_picker::Kind::Open, "Open \u{2014} Android", open_extensions(&purpose), None, None)
+        }
+        FileDialogRequest::OpenMany { purpose } => {
+            (file_picker::Kind::OpenMany, "Open \u{2014} Android", open_extensions(&purpose), None, None)
+        }
+        FileDialogRequest::Save { name, dir } => {
+            (file_picker::Kind::Save, "Save As \u{2014} Android", None, Some(name), dir)
+        }
     };
-    let paths = file_picker::request(kind, title, extensions, suggested);
+    let paths = file_picker::request(kind, title, extensions, suggested, start);
     let (answer, rx) = std::sync::mpsc::channel();
+    let reply = answer.clone();
     let waiting = std::thread::Builder::new().name("file dialog".into()).spawn(move || {
-        let picked = paths.recv().ok().and_then(|v| v.into_iter().next()).map(|p| p.to_string_lossy().into_owned());
-        let _ = answer.send(picked);
+        let picked = paths.recv().unwrap_or_default();
+        // An empty answer is how the app reads "cancelled"; `Err` would make it fall back to its
+        // own built-in browser, which this picker replaces.
+        let paths = picked.iter().map(|p| p.to_string_lossy().into_owned()).collect();
+        let _ = reply.send(Ok(paths));
     });
     if let Err(e) = waiting {
-        // The dropped sender reads as "cancelled" in the app, which is the honest outcome.
-        log::error!("couldn't start the file-dialog thread: {e}");
+        // Tell the app no host dialog could be shown, so it offers its own browser instead of
+        // behaving as if the user had cancelled.
+        let _ = answer.send(Err(format!("couldn't start the file-dialog thread: {e}")));
     }
     rx
-}
-
-// This window's `AndroidApp`, kept for what the app asks of the platform *after* start-up —
-// opening a second window, today.
-//
-// android-activity warns against holding an `AndroidApp` in global state because it dies with its
-// Activity; this is per-thread state that `android_main` fills in and clears again as its loop
-// runs and ends, so it never outlives the Activity it belongs to.
-#[cfg(target_os = "android")]
-thread_local! {
-    static APP: std::cell::RefCell<Option<winit::platform::android::activity::AndroidApp>> =
-        const { std::cell::RefCell::new(None) };
-}
-
-/// Open a second window on this app: a second Activity, so two documents can be put side by side on
-/// the tablet (Android's split screen gives one window per task).
-///
-/// No manifest metadata does this — `documentLaunchMode` has no home in `cargo-apk`'s schema — and
-/// none is needed if the intent says it instead: `FLAG_ACTIVITY_NEW_DOCUMENT` with
-/// `FLAG_ACTIVITY_MULTIPLE_TASK` *is* that attribute ("a document of its own, in its own task, even
-/// though an instance is running") and the launch intent has to come from us. The component is
-/// asked of the running Activity (`getComponentName()`) rather than spelled out from a package name
-/// and the launcher class, so nothing here has to stay in agreement with the Cargo metadata by
-/// hand; the flags are read from the `Intent` class rather than copied as numbers.
-///
-/// A launch that fails is logged and nothing else happens: the menu entry that called this has
-/// already returned, so there is no one to tell.
-#[cfg(target_os = "android")]
-fn new_window() {
-    let Some(app) = APP.with(|slot| slot.borrow().clone()) else {
-        log::error!("no AndroidApp in this window: cannot open another");
-        return;
-    };
-    // SAFETY: `vm_as_ptr` is the JavaVM this process is already attached to, and `JavaVM::from_raw`
-    // is a singleton behind a non-null assert — passing the pointer is all it takes.
-    let vm = unsafe { jni::JavaVM::from_raw(app.vm_as_ptr().cast()) };
-    let opened = vm.attach_current_thread(|env| -> jni::errors::Result<()> {
-        use jni::objects::{JObject, JValue};
-        use jni::signature::{RuntimeFieldSignature, RuntimeMethodSignature};
-        use jni::strings::JNIStr;
-
-        // Names and signatures, each written once. A C string literal cannot carry an interior NUL
-        // or invalid MUTF-8, so `from_cstr` cannot fail on one.
-        let name = |n: &'static std::ffi::CStr| JNIStr::from_cstr(n).expect("a literal name");
-        let method = RuntimeMethodSignature::from_str;
-        let get_component = method("()Landroid/content/ComponentName;")?;
-        let set_component = method("(Landroid/content/ComponentName;)Landroid/content/Intent;")?;
-        let add_flags = method("(I)Landroid/content/Intent;")?;
-        let start_activity = method("(Landroid/content/Intent;)V")?;
-        let no_args = method("()V")?;
-        let int_field = RuntimeFieldSignature::from_str("I")?;
-
-        // SAFETY: this is this Activity's own reference, valid for as long as its `AndroidApp` is.
-        // `JObject` does not own what it points at — it has no `Drop`, which is exactly why
-        // android-activity's own JNI example wraps this pointer this way and warns only against
-        // `Global`/`Auto`, which would delete a reference the platform still holds.
-        let activity = unsafe { JObject::from_raw(env, app.activity_as_ptr() as jni::sys::jobject) };
-
-        let component =
-            env.call_method(&activity, name(c"getComponentName"), get_component.method_signature(), &[])?.l()?;
-        let intent_class = name(c"android/content/Intent");
-        let intent = env.new_object(intent_class, no_args.method_signature(), &[])?;
-        env.call_method(
-            &intent,
-            name(c"setComponent"),
-            set_component.method_signature(),
-            &[JValue::Object(&component)],
-        )?;
-        // The pair of flags, named rather than numbered: a new document in a new task, and do it
-        // even though this app already has a window.
-        let flags = env
-            .get_static_field(intent_class, name(c"FLAG_ACTIVITY_NEW_DOCUMENT"), int_field.field_signature())?
-            .i()?
-            | env
-                .get_static_field(intent_class, name(c"FLAG_ACTIVITY_MULTIPLE_TASK"), int_field.field_signature())?
-                .i()?;
-        env.call_method(&intent, name(c"addFlags"), add_flags.method_signature(), &[JValue::Int(flags)])?;
-        env.call_method(
-            &activity,
-            name(c"startActivity"),
-            start_activity.method_signature(),
-            &[JValue::Object(&intent)],
-        )?;
-        Ok(())
-    });
-    match opened {
-        Ok(()) => log::info!("asked the system for a second window"),
-        Err(e) => log::error!("couldn't ask the system for a second window: {e}"),
-    }
 }
 
 /// The platform-neutral half of the desktop `services()`.
@@ -252,22 +183,17 @@ fn new_window() {
 /// leaving `download` out is what makes File ▸ Save fall through to Save As rather than looking
 /// for a browser to hand bytes to.
 ///
-/// What it supplies is the in-app file picker, and — on Android, the only place with a second window
-/// to open — [`new_window`]; the host build supplies just the picker.
-#[cfg(target_os = "android")]
+/// What it supplies is the in-app file picker. The host build has the same services, so
+/// `cargo check` (and `cargo clippy`, and the lint pass in CI) sees every platform-independent
+/// part of this crate.
 fn android_services() -> Services {
     Services {
         file_dialog: Some(Box::new(file_dialog)),
-        new_window: Some(Box::new(new_window)),
+        // The ribbon and context-menu Paste read the clipboard through this; the keyboard
+        // shortcut arrives as `Event::Paste` instead (see `clipboard`).
+        clipboard_text: Some(Box::new(clipboard::text)),
         ..Default::default()
     }
-}
-
-/// The host build has no Activity to open a window on; it exists so `cargo check` (and `cargo
-/// clippy`, and the lint pass in CI) can see this crate's platform-independent parts at all.
-#[cfg(not(target_os = "android"))]
-fn android_services() -> Services {
-    Services { file_dialog: Some(Box::new(file_dialog)), ..Default::default() }
 }
 
 /// A minimal file logger, so a sideloaded APK leaves a readable trace.
@@ -317,12 +243,8 @@ fn init_logging(dir: &Path) {
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
-    // Count this window while its loop runs, so a quit can tell whether ending it should end the
-    // process or only this window (see `prefs_watch`).
+    // Count this window while its loop runs; the guard drops when `android_main` returns.
     let _window = prefs_watch::counted_window();
-    // Kept for the one platform action that comes later (see `new_window`); cleared when this
-    // window's loop ends.
-    APP.with(|slot| *slot.borrow_mut() = Some(app.clone()));
     let data_dir = app.internal_data_path().unwrap_or_else(|| PathBuf::from("."));
     let _ = std::fs::create_dir_all(&data_dir);
     let _ = DATA_DIR.set(data_dir.clone());
@@ -337,6 +259,11 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
     // Fonts: a folder the user can drop a font file into over USB, pointed at where this app's font
     // scan looks (see `file_picker::register_fonts`).
     file_picker::register_fonts();
+    // The system clipboard goes through the same Activity handle as the rest of the platform.
+    clipboard::install(&app);
+    // The launching intent (open-with / share) is read here too; the shell consumes it on its
+    // first frame (see `intents`).
+    intents::install(&app);
 
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default().with_title("WordCraft").with_app_id("ai.storyteller.wordcraft"),
@@ -367,6 +294,7 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
                 modifiers: modifiers::Tracked::default(),
                 touch: touch_scroll::TouchScroll::default(),
                 prefs: prefs_watch::Writer::new(prefs_file(), PREFS_EVERY),
+                pending_launch: intents::launch(),
             }))
         }),
     );
@@ -377,7 +305,6 @@ pub fn android_main(app: winit::platform::android::activity::AndroidApp) {
         Ok(()) => log::info!("WordCraft exited normally"),
         Err(e) => log::error!("WordCraft stopped: {e}"),
     }
-    APP.with(|slot| *slot.borrow_mut() = None);
 }
 
 /// Wraps the real app so the platform can act on the frame around it — here, ending the process
@@ -398,6 +325,9 @@ struct Shell {
     /// gives that ending, so a swipe from Recents would otherwise take every preference with it
     /// (see [`prefs_watch`]).
     prefs: prefs_watch::Writer,
+    /// A file or text handed to us by the launching intent (open-with / share), consumed on the
+    /// first frame (see [`intents`]).
+    pending_launch: Option<intents::LaunchIntent>,
 }
 
 impl Shell {
@@ -423,22 +353,31 @@ impl Shell {
         self.prefs.store_now(&bytes);
         log::info!("quitting");
         log::logger().flush();
-        if prefs_watch::windows() > 1 {
-            // Another window of this app is open in this process (a second Activity). Killing the
-            // process would take that window with it, so this one asks its own event loop to end:
-            // `run_native` returns, `android_main` returns, and android-activity retires this
-            // Activity — which is what it asks of an app after `MainEvent::Destroy`. `windows()`
-            // cannot lie here: the count is only decremented when a loop actually returns.
-            self.inner.quit_requested = false;
-            ctx.send_viewport_cmd(egui::ViewportCommand::Close);
-        } else {
-            std::process::exit(0);
-        }
+        // One Activity and one event loop: ending the process is the whole quit. (Upstream 0.12
+        // opens further documents in this same window and, for View › New Window, asks for an
+        // egui viewport; winit's Android backend still has one native window per Activity.)
+        let _ = ctx;
+        std::process::exit(0);
     }
 }
 
 impl eframe::App for Shell {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
+        if let Some(launch) = self.pending_launch.take() {
+            match launch {
+                intents::LaunchIntent::OpenFile(path) => {
+                    let _ = self.inner.open_file(path.to_string_lossy().as_ref(), None);
+                }
+                intents::LaunchIntent::ImportText(text) => {
+                    // A shared snippet: write it to a temp text file and open that, reusing the
+                    // normal open path instead of guessing at document-creation commands.
+                    let path = std::env::temp_dir().join("shared.txt");
+                    if std::fs::write(&path, text).is_ok() {
+                        let _ = self.inner.open_file(path.to_string_lossy().as_ref(), None);
+                    }
+                }
+            }
+        }
         self.inner.logic(ctx);
         if self.prefs.due() {
             let bytes = prefs_bytes(&self.inner);
@@ -447,7 +386,16 @@ impl eframe::App for Shell {
         self.quit_if_asked(ctx);
     }
 
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
+        // Back (gesture or button) closes an open dialog/picker instead of finishing the Activity:
+        // rewrite it to Escape, which every dialog in these apps already answers to.
+        for event in &mut raw.events {
+            if let egui::Event::Key { key, .. } = event
+                && *key == egui::Key::BrowserBack
+            {
+                *key = egui::Key::Escape;
+            }
+        }
         // Before the app, so the frame it sees already has the modifiers a desktop backend would
         // have reported (see `modifiers`).
         let modifiers = self.modifiers.apply(raw);
@@ -455,13 +403,26 @@ impl eframe::App for Shell {
         // all, which is why nothing scrolled. A two-finger drag becomes one here (see
         // `touch_scroll`).
         self.touch.apply(raw, modifiers);
-        self.inner.raw_input_hook(raw);
+        // Flush preferences when the window loses focus (suspend): Android may never call on_exit.
+        let lost_focus = raw.viewports.values().any(|v| v.focused == Some(false));
+        if lost_focus {
+            let bytes = prefs_bytes(&self.inner);
+            self.prefs.store_now(&bytes);
+        }
+        // Then the clipboard keys: egui-winit could not turn them into Copy/Cut/Paste because
+        // the backend never reports Modifiers, so they are still ordinary key presses here (see
+        // `clipboard::shortcuts`).
+        clipboard::shortcuts(raw);
+        self.inner.raw_input_hook(ctx, raw);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.inner.ui(ui);
         // After the app, so the picker floats above the ribbon and the page.
         file_picker::draw(ui.ctx());
+        // And after the app: this is the one place that sees egui's CopyText before egui-winit
+        // consumes it, and puts it on the system clipboard (see `clipboard::publish`).
+        clipboard::publish(ui.ctx());
         // File ▸ Exit is a menu click, so it is set during this call: check here, in the same
         // frame, rather than leaving it to the next `logic` — no repaint is guaranteed after a
         // click, and waiting for one is how Exit ends up doing nothing.

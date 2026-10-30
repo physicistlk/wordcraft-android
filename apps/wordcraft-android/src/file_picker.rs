@@ -19,8 +19,9 @@
 //!
 //! Shape per app:
 //!
-//! - `Services::file_dialog(req) -> Receiver<Option<String>>` (WordCraft, this
-//!   crate's `FileDialogRequest`): answer `Some(path)`, or `None` for cancelled.
+//! - `Services::file_dialog(req) -> Receiver<FileDialogAnswer>` (WordCraft, this
+//!   crate's `FileDialogRequest`): answer `Ok(paths)`, empty for cancelled, or `Err` when no
+//!   host dialog could be shown.
 //! - `Services::pick_save_async(name) -> Receiver<Option<String>>` (GridCraft,
 //!   DeckCraft): the same, for Save As and the exports. Without it the app is
 //!   handed only finished bytes and never learns where they went.
@@ -100,6 +101,8 @@ struct Pending {
     picked: Vec<PathBuf>,
     /// A message to show inside the picker (usually a permission problem).
     note: Option<String>,
+    /// A folder the app asked to start in, used when it is readable.
+    start: Option<PathBuf>,
     /// Whether the starting directory was already applied.
     started: bool,
     /// Where the answer goes; the app polls it once a frame.
@@ -127,7 +130,13 @@ pub fn extensions(filters: &[&[&str]]) -> Option<Vec<String>> {
 /// A dialog already open in *this* window is answered "cancelled" first; the app
 /// can only use one answer at a time, and leaving the old request waiting would
 /// strand it.
-pub fn request(kind: Kind, title: &str, extensions: Option<Vec<String>>, suggested: Option<String>) -> Receiver<Vec<PathBuf>> {
+pub fn request(
+    kind: Kind,
+    title: &str,
+    extensions: Option<Vec<String>>,
+    suggested: Option<String>,
+    start: Option<String>,
+) -> Receiver<Vec<PathBuf>> {
     let (tx, rx) = channel();
     PENDING.with(|slot| {
         let mut slot = slot.borrow_mut();
@@ -144,6 +153,7 @@ pub fn request(kind: Kind, title: &str, extensions: Option<Vec<String>>, suggest
             name: suggested.unwrap_or_default(),
             picked: Vec::new(),
             note: None,
+            start: start.map(PathBuf::from),
             started: false,
             answer: Some(tx),
         });
@@ -318,7 +328,7 @@ pub fn draw(ctx: &egui::Context) {
     // First frame: pick a starting directory.
     if !pending.started {
         pending.started = true;
-        pending.dir = default_dir();
+        pending.dir = pending.start.take().filter(|p| p.is_dir()).unwrap_or_else(default_dir);
         if kind == Kind::Save && pending.name.is_empty() {
             pending.name = "untitled".to_string();
         }

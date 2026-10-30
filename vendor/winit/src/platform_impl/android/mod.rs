@@ -453,7 +453,7 @@ impl<T: 'static> EventLoop<T> {
                 let phase = match motion_event.action() {
                     MotionAction::Down | MotionAction::PointerDown => {
                         Some(event::TouchPhase::Started)
-                    }
+                    },
                     MotionAction::Up | MotionAction::PointerUp => Some(event::TouchPhase::Ended),
                     MotionAction::Move => Some(event::TouchPhase::Moved),
                     MotionAction::Cancel => Some(event::TouchPhase::Cancelled),
@@ -461,7 +461,7 @@ impl<T: 'static> EventLoop<T> {
                         // Buttons, hover enter/exit: still no window event of their own (a mouse
                         // button already arrives as a touch Down/Up and works).
                         None
-                    }
+                    },
                 };
                 if let Some(phase) = phase {
                     let pointers: Box<dyn Iterator<Item = android_activity::input::Pointer<'_>>> =
@@ -999,6 +999,11 @@ impl Window {
     }
 
     pub fn set_ime_purpose(&self, _purpose: ImePurpose) {}
+
+    pub fn reset_ime(&self) {}
+
+    #[inline]
+    pub fn reset_ime_with_request(&self, _request_id: u64) {}
 
     pub fn focus_window(&self) {}
 

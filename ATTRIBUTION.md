@@ -2,8 +2,8 @@
 
 ## Upstream
 
-**WordCraft** — <https://github.com/storytold/wordcraft> — pinned here at `2ffba93b5189410a415970be179dcf481092d756`
-(version `0.5.0`).
+**WordCraft** — <https://github.com/storytold/wordcraft> — pinned here at `3de6ff95af86c19d67030cd96dba15cd6a45a25e`
+(version `0.12.0`).
 
 Upstream is dual-licensed **Apache-2.0 OR MIT**. Both licence texts are reproduced in this
 repository as `LICENSE-APACHE` and `LICENSE-MIT`, as the licences require. WordCraft and its

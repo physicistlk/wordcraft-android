@@ -1,5 +1,66 @@
 # Changelog
 
+## v0.2.1 — 2026-10-30 (system clipboard)
+
+| | |
+|---|---|
+| APK | `wordcraft-0.12.0-arm64-v8a-20261030.apk` — sha256 in `SHA256SUMS.txt` beside the build |
+| Built from | upstream `storytold/wordcraft` @ `3de6ff95af86c19d67030cd96dba15cd6a45a25e` (v0.12.0) + this repository at the commit that released it |
+| Package | `ai.storyteller.wordcraft` — versionName `0.12.0`, versionCode `16780288`, minSdk 26, targetSdk 35 |
+| ABI | `arm64-v8a` only |
+| Signature | local test key (Mode A); not an official WordCraft key |
+
+### Changed
+- **The system clipboard works for text (`src/clipboard.rs`).** Copy and paste crossed the app
+  boundary for the first time: Ctrl+C/X/V now produce `Event::Copy`/`Cut`/`Paste` (the Android
+  backend never reports modifiers, so `egui-winit` never did), Paste reads
+  `ClipboardManager` through JNI, and `OutputCommand::CopyText` is written back with
+  `ClipData.newPlainText`. The ribbon and context-menu Paste read the same clipboard through
+  `Services::clipboard_text` (#584). Plain text only: pictures and HTML are not negotiated yet.
+
+### Unchanged
+- Everything in v0.2.0: the 0.12.0 rebase, the in-app picker, two-finger scrolling, modifier
+  tracking, preferences written while the app runs, the *Fonts* folder and the theme fixes.
+
+### Notes
+Built and verified on Linux with NDK r27.2.12479018, build-tools 36.0.0, JDK 21 and cargo-apk 0.10.0.
+The clipboard's JNI path was not exercised on a device as part of this build (no device was
+connected); its key handling and publishing are covered by unit tests.
+
+## v0.2.0 — 2026-10-28 (rebased on WordCraft 0.12.0)
+
+| | |
+|---|---|
+| APK | `wordcraft-0.12.0-arm64-v8a-20261028.apk` — sha256 in `SHA256SUMS.txt` beside the build |
+| Built from | upstream `storytold/wordcraft` @ `3de6ff95af86c19d67030cd96dba15cd6a45a25e` (v0.12.0) + this repository at the commit that released it |
+| Package | `ai.storyteller.wordcraft` — versionName `0.12.0`, versionCode `16780288`, minSdk 26, targetSdk 35 |
+| ABI | `arm64-v8a` only |
+| Signature | local test key (Mode A); not an official WordCraft key |
+
+### Changed
+- **Upstream moved from 0.5.0 to 0.12.0**, seven minor releases of document, layout, format and UI
+  work. The port follows the current `Services`, `FileDialogRequest`/`FileDialogAnswer` and
+  `egui 0.37` APIs instead of the 0.5.0 shapes.
+- **The second-Activity `new_window` seam was removed.** Upstream 0.12 opens multiple documents in
+  one window and implements *View ▸ Window ▸ New Window* with egui viewports; winit's Android
+  backend still has one native window per Activity. Use View ▸ Switch Windows for several documents.
+  The port no longer patches `crates/ui-egui/src/lib.rs`.
+- **The file picker answers every path the app asks for** (`OpenMany` for Add Font) and honours a
+  suggested start folder; the filter list now comes from upstream `open_filters`, so new formats and
+  the `font`/`sources` purposes are offered without a second list to maintain.
+- **The vendored winit is the fork revision upstream 0.12 pins**, with the same Android wheel and
+  hover patches re-applied. This is the one tracked upstream file the patch changes now
+  (`Cargo.toml`'s `[patch.crates-io] winit`).
+
+### Unchanged
+- Two-finger scrolling, modifier tracking (including Ctrl from the physical key), preferences written
+  atomically while the app runs, the `Android/media/<package>/Fonts` folder, the in-app picker and
+  the `config_changes` / fullscreen theme fixes.
+
+### Notes
+Built and verified on Linux with NDK r27.2.12479018, build-tools 35.0.0, JDK 21 and cargo-apk 0.10.0.
+Runtime behaviour was not re-tested on a device as part of this build.
+
 ## v0.1.2 — 2026-10-13 (Ctrl shortcuts)
 
 | | |

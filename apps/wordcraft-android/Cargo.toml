@@ -18,9 +18,8 @@ crate-type = ["cdylib"]
 # Omit `[lints] workspace = true`: the workspace forbids unsafe_code, which trips on the
 # `#[unsafe(no_mangle)]` entry point this crate needs, and nothing else here wants the lints.
 [dependencies]
-# `jni` is the same 0.22 android-activity itself depends on, so this unifies rather than
-# compiling a second JNI layer. It is used for exactly one thing: sending the intent that opens a
-# second window (`new_window`), which no manifest metadata can express (see `src/lib.rs`).
+# The system clipboard (`src/clipboard.rs`) is a JNI call to `ClipboardManager`; jni 0.22 is the
+# version android-activity itself depends on, so this unifies rather than compiling a second layer.
 jni = "0.22"
 wordcraft-doc = { workspace = true }
 wordcraft-engine = { workspace = true }
