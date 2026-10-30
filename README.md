@@ -132,3 +132,16 @@ dual-licensed Apache-2.0 / MIT; both licence texts are kept here. The Android la
 repository is an unofficial modification by [@kanaaka](https://github.com/kanaaka), carrying the
 same licence. Not affiliated with or endorsed by the upstream project. See
 [`ATTRIBUTION.md`](ATTRIBUTION.md).
+
+
+## Android 16 build (physicistlk fork)
+
+This fork carries the Android 16 port (arm64-v8a, 16 KB page-aligned) plus the
+tablet-compatibility milestones (system clipboard, open-with/share intents, flush on
+suspend, back-gesture closes dialog, trackpad wheel + pen hover, stylus pressure for
+PhotoCraft, PhotoCraft crash-recovery autosave).
+
+A signed APK for the current state is attached to the
+[v2026.10.30 release](https://github.com/physicistlk/wordcraft-android/releases/tag/v2026.10.30).
+
+See the upstream `kanaaka` repository for the full port notes and verification details.
