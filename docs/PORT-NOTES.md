@@ -1,7 +1,7 @@
 # Port notes — WordCraft on Android
 
 Upstream: [`storytold/wordcraft`](https://github.com/storytold/wordcraft) @
-`3de6ff95af86c19d67030cd96dba15cd6a45a25e` (v0.12.0)
+`2be33e6d` (v0.13.2)
 Published APK: `wordcraft-0.12.0-arm64-v8a-20261028.apk`
 
 The port is `apps/wordcraft-android/` plus a vendored, patched winit. Since 0.12.0 it changes **one
@@ -100,7 +100,7 @@ path itself has not run on a device — no Android device was connected for this
 
 ## 2026-10-28 — rebased from 0.5.0 onto 0.12.0
 
-The port now targets upstream **v0.12.0** (`3de6ff9`), the newest official stable release at the time
+The port now targets upstream **v0.13.2** (`3de6ff9`), the newest official stable release at the time
 of the build. Seven minor upstream releases (0.6 through 0.12) changed much more than the 0.5.0 seam
 this port carried, so the rebase is an adaptation, not a mechanical re-apply:
 

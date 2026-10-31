@@ -111,3 +111,14 @@ max_sdk_version = 32
 [[package.metadata.android.uses_permission]]
 name = "android.permission.WRITE_EXTERNAL_STORAGE"
 max_sdk_version = 29
+
+# Open-with / share: appear in "Open with" and receive shared files.
+[[package.metadata.android.application.activity.intent_filter]]
+actions = ["android.intent.action.VIEW"]
+categories = ["android.intent.category.DEFAULT"]
+data = [{ mime_type = "*/*" }]
+
+[[package.metadata.android.application.activity.intent_filter]]
+actions = ["android.intent.action.SEND"]
+categories = ["android.intent.category.DEFAULT"]
+data = [{ mime_type = "text/plain" }, { mime_type = "image/*" }]

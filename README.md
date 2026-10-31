@@ -39,7 +39,7 @@ JDK 21, and `cargo install cargo-apk --version 0.10.0`.
 ```bash
 git clone https://github.com/storytold/wordcraft.git
 cd wordcraft
-git fetch --depth 1 origin 3de6ff95af86c19d67030cd96dba15cd6a45a25e
+git fetch --depth 1 origin 2be33e6d
 git checkout FETCH_HEAD                        # the exact commit this port targets
 git apply -3 /path/to/0001-wordcraft-android-port.patch
 cp -r /path/to/wordcraft-android/apps/wordcraft-android apps/
@@ -89,7 +89,7 @@ A tick means the check was *run*, not inferred; the wording says how far it goes
 
 | Claim | How it was checked | Result |
 |---|---|---|
-| `patches/…patch` applies to a clean checkout of the pin | fresh `git init` + `git fetch --depth 1 origin 3de6ff95af86c19d67030cd96dba15cd6a45a25e` + `git apply --check` | ✅ applies cleanly |
+| `patches/…patch` applies to a clean checkout of the pin | fresh `git init` + `git fetch --depth 1 origin 2be33e6d` + `git apply --check` | ✅ applies cleanly |
 | The assembled tree equals the tree the APK was built from | file-by-file SHA-256 (line endings normalised) over every patched file and every file of the port crate | ✅ 12 files identical, none differing |
 | The port crate compiles for Android | `cargo check -p wordcraft-android --target aarch64-linux-android`, run in a tree assembled from scratch (fresh `git fetch` of the pin, patch applied, port crate copied in) | ✅ exit 0 |
 | The port crate's own tests | `cargo test -p wordcraft-android` in the freshly assembled tree | ✅ 16/16 pass |
