@@ -4,3 +4,7 @@ target/
 *.jks
 *.keystore
 .gradle/
+
+# secrets
+*.password
+github_key
