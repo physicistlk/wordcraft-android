@@ -154,4 +154,11 @@ crate) and signed with the same local test key as v0.1.0, so it installs over it
 
 
 ### Known issues
+- **Backspace is intermittent with the onscreen (soft) keyboard** (reported 2026-11-07 on an arm64
+  tablet with the Google keyboard). External keyboards are not affected. Root cause: the soft
+  keyboard delivers Backspace via `InputConnection.deleteSurroundingText` rather than a hardware key
+  event, and the vendored winit Android backend does not translate that into an
+  `Ime::DeleteSurrounding` / `Key::Backspace` event, so egui only sees it when the IME happens to
+  emit a key event. Milestone tracked for a follow-up patch in `vendor/winit` (Android
+  `InputConnection` → `Ime::DeleteSurrounding`).
 See *Known gaps* in the [README](README.md) and [`docs/PORT-NOTES.md`](docs/PORT-NOTES.md).
