@@ -6,9 +6,9 @@ and egui interface, packaged as a NativeActivity APK for sideloading on arm64 de
 | | |
 |---|---|
 | Upstream project | [`storytold/wordcraft`](https://github.com/storytold/wordcraft) — Apache-2.0 OR MIT |
-| Pinned commit | `08afab50` (upstream version `0.15.1`) |
+| Pinned commit | `5574b326` (upstream version `0.17.0`) |
 | Android package | `ai.storyteller.wordcraft` |
-| Published APK | `wordcraft-0.15.1-arm64-v8a-20261104.apk` — arm64-v8a, signed with a local test key (release **v0.15.1**, 2026-11-04) |
+| Published APK | `wordcraft-0.17.0-arm64-v8a-20261109.apk` — arm64-v8a, signed with a local test key (release **v0.17.0**, 2026-11-09) |
 | APK sha256 | recorded in `SHA256SUMS.txt` beside the built APK |
 | Upstream files changed | 1 file (`Cargo.toml`, the winit patch source) — see [`patches/`](patches/) |
 | Vendored crates | `vendor/winit/` — the pinned upstream fork plus the Android wheel/hover fix, copied in with the crate |

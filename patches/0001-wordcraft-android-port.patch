@@ -1,14 +1,22 @@
 diff --git a/Cargo.lock b/Cargo.lock
-index a2f9be36..3e079785 100644
+index b99b3352..c33fefd6 100644
 --- a/Cargo.lock
 +++ b/Cargo.lock
-@@ -6831,6 +6831,21 @@ dependencies = [
+@@ -6677,7 +6677,6 @@ checksum = "589f6da84c646204747d1270a2a5661ea66ed1cced2631d546fdfb155959f9ec"
+ [[package]]
+ name = "winit"
+ version = "0.30.13"
+-source = "git+https://github.com/storytold/winit.git?rev=a517b3846ee8457d84ee4975110bfda6797c44dc#a517b3846ee8457d84ee4975110bfda6797c44dc"
+ dependencies = [
+  "ahash",
+  "android-activity",
+@@ -6842,6 +6841,21 @@ dependencies = [
   "zbus",
  ]
  
 +[[package]]
 +name = "wordcraft-android"
-+version = "0.16.0"
++version = "0.17.0"
 +dependencies = [
 + "eframe",
 + "egui",
@@ -23,7 +31,17 @@ index a2f9be36..3e079785 100644
 +
  [[package]]
  name = "wordcraft-cli"
- version = "0.16.0"
+ version = "0.17.0"
+diff --git a/Cargo.toml b/Cargo.toml
+index d93aaffa..b3856a96 100644
+--- a/Cargo.toml
++++ b/Cargo.toml
+@@ -149,4 +149,4 @@ egui_system_font_provider = { git = "https://github.com/storytold/egui.git", rev
+ eframe = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+ egui_demo_lib = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+ egui_inspection = { git = "https://github.com/storytold/egui.git", rev = "6d518fc799681571963842f95b55a6b68431b15a" }
+-winit = { git = "https://github.com/storytold/winit.git", rev = "a517b3846ee8457d84ee4975110bfda6797c44dc" }
++winit = { path = "vendor/winit" }
 diff --git a/apps/wordcraft-android/Cargo.toml b/apps/wordcraft-android/Cargo.toml
 new file mode 100644
 index 00000000..bcaba220
@@ -154,100 +172,6 @@ index 00000000..bcaba220
 +actions = ["android.intent.action.SEND"]
 +categories = ["android.intent.category.DEFAULT"]
 +data = [{ mime_type = "text/plain" }, { mime_type = "image/*" }]
-diff --git a/apps/wordcraft-android/res/mipmap-hdpi/ic_launcher.png b/apps/wordcraft-android/res/mipmap-hdpi/ic_launcher.png
-new file mode 100644
-index 00000000..28adc89c
-Binary files /dev/null and b/apps/wordcraft-android/res/mipmap-hdpi/ic_launcher.png differ
-diff --git a/apps/wordcraft-android/res/mipmap-mdpi/ic_launcher.png b/apps/wordcraft-android/res/mipmap-mdpi/ic_launcher.png
-new file mode 100644
-index 00000000..0f601806
-Binary files /dev/null and b/apps/wordcraft-android/res/mipmap-mdpi/ic_launcher.png differ
-diff --git a/apps/wordcraft-android/res/mipmap-xhdpi/ic_launcher.png b/apps/wordcraft-android/res/mipmap-xhdpi/ic_launcher.png
-new file mode 100644
-index 00000000..abf7330b
-Binary files /dev/null and b/apps/wordcraft-android/res/mipmap-xhdpi/ic_launcher.png differ
-diff --git a/apps/wordcraft-android/res/mipmap-xxhdpi/ic_launcher.png b/apps/wordcraft-android/res/mipmap-xxhdpi/ic_launcher.png
-new file mode 100644
-index 00000000..db83ff6d
-Binary files /dev/null and b/apps/wordcraft-android/res/mipmap-xxhdpi/ic_launcher.png differ
-diff --git a/apps/wordcraft-android/res/mipmap-xxxhdpi/ic_launcher.png b/apps/wordcraft-android/res/mipmap-xxxhdpi/ic_launcher.png
-new file mode 100644
-index 00000000..707d95e5
-Binary files /dev/null and b/apps/wordcraft-android/res/mipmap-xxxhdpi/ic_launcher.png differ
-diff --git a/apps/wordcraft-android/res/values/styles.xml b/apps/wordcraft-android/res/values/styles.xml
-new file mode 100644
-index 00000000..c658681e
---- /dev/null
-+++ b/apps/wordcraft-android/res/values/styles.xml
-@@ -0,0 +1,68 @@
-+<?xml version="1.0" encoding="utf-8"?>
-+<!--
-+  Two fixes for the Android 15 edge-to-edge issue, so the tablet can pick one.
-+  The same two the PhotoCraft port shipped.
-+
-+  Cause: the APK targets targetSdkVersion 35, and Android 15 enforces
-+  edge-to-edge for every app targeting 35+. The system stops insetting the
-+  window and draws the app underneath a transparent status bar. eframe/winit
-+  implements no inset handling (winit 0.30.13 has no Android safe-area API), so
-+  egui lays WordCraft's app bar and menu bar out at y=0 — behind the
-+  notification bar, where they are drawn but never receive touches.
-+
-+  Both themes are one attribute deep; the difference is whether the status bar
-+  is made room for, or hidden entirely.
-+-->
-+<resources>
-+
-+    <!--
-+      VARIANT A — keep the notification bar, put the app below it.
-+
-+      `windowOptOutEdgeToEdgeEnforcement` restores the old window fitting: the
-+      system insets the activity's window below the status bar again, so the
-+      NativeActivity surface begins underneath it and the menu bar lands where it
-+      can be tapped.
-+
-+      Android 15 only. The platform marks this attribute deprecated in favour of
-+      apps consuming WindowInsets themselves, and Android 16 ignores it. The
-+      version-proof equivalent is a JNI call to
-+      WindowInsetsController.setOnApplyWindowInsetsListener plus a top spacer in
-+      egui, which is not implemented here.
-+    -->
-+    <style name="WordcraftStatusBar" parent="@android:style/Theme.DeviceDefault.NoActionBar">
-+        <item name="android:windowOptOutEdgeToEdgeEnforcement">true</item>
-+        <!-- `windowSoftInputMode` has no home in cargo-apk's manifest schema, and none is needed:
-+             it is a *themeable* attribute (`attrs.xml` declares the flags and the platform's own
-+             base theme sets it as an item), so the theme can carry it. Verified to survive into the
-+             built resources as `0x0101022b=0x10`. See the note under WordcraftFullscreen for what it
-+             does and does not achieve on Android 15. -->
-+        <item name="android:windowSoftInputMode">adjustResize</item>
-+    </style>
-+
-+    <!--
-+      VARIANT B — immersive, like a game: hide the status bar.
-+
-+      `windowFullscreen` hides the status bar, so nothing overlays the menu bar
-+      and the canvas gets the whole screen height. This is the legacy mechanism,
-+      so it is less certain than variant A on Android 15 — if the status bar
-+      survives the edge-to-edge enforcement the menu bar stays unreachable. This
-+      is the variant that was confirmed working on the tablet for PhotoCraft.
-+
-+      Note this hides only the *status* bar. Hiding the navigation bar too needs
-+      the immersive-mode API (WindowInsetsController.hide(Type.systemBars())),
-+      which is Java-only and would need a JNI bridge; there is no Java in this
-+      project.
-+    -->
-+    <style name="WordcraftFullscreen" parent="@android:style/Theme.DeviceDefault.NoActionBar.Fullscreen">
-+        <item name="android:windowFullscreen">true</item>
-+        <!-- See the note in WordcraftStatusBar: `adjustResize` asks the system to shrink the window
-+             for the keyboard and the taskbar instead of drawing them over the app. On Android 15 it
-+             is not enough on its own: the window manager honours the flag (`sim={adjust=resize}` in
-+             `dumpsys window`) but nothing consumes the insets — `mImeInsetsConsumed=false` — because
-+             targeting SDK 35 puts the app in charge of them, and consuming them needs a Java-side
-+             WindowInsets call this project has no bridge for. Kept because it is the right thing to
-+             ask for and other Android versions and devices do act on it. -->
-+        <item name="android:windowSoftInputMode">adjustResize</item>
-+    </style>
-+
-+</resources>
 diff --git a/apps/wordcraft-android/src/clipboard.rs b/apps/wordcraft-android/src/clipboard.rs
 new file mode 100644
 index 00000000..b4d02284
