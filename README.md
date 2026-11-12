@@ -118,12 +118,17 @@ fixes. There is no automated device test in this repository.
 
 ## The rest of this set
 
-- [photocraft-android](https://github.com/kanaaka/photocraft-android) — PhotoCraft 0.7.0
-- [vectorcraft-android](https://github.com/kanaaka/vectorcraft-android) — VectorCraft 0.9.0
-- [pdfcraft-android](https://github.com/kanaaka/pdfcraft-android) — PdfCraft 0.6.0
-- [gridcraft-android](https://github.com/kanaaka/gridcraft-android) — GridCraft 0.5.0
-- [deckcraft-android](https://github.com/kanaaka/deckcraft-android) — DeckCraft 0.5.0
-- [shared-android-port](https://github.com/kanaaka/shared-android-port) — build/verify scripts + the cross-compile environment
+Every port in this set is built from the same patched upstream tree and published by
+[@physicistlk](https://github.com/physicistlk). Each link goes to that port's latest
+release, which carries the signed `arm64-v8a` APK:
+
+- [cadcraft-android](https://github.com/physicistlk/cadcraft-android/releases/latest) — CadCraft 0.20.1
+- [deckcraft-android](https://github.com/physicistlk/deckcraft-android/releases/latest) — DeckCraft 0.18.1
+- [gridcraft-android](https://github.com/physicistlk/gridcraft-android/releases/latest) — GridCraft 0.19.1
+- [lightcraft-android](https://github.com/physicistlk/lightcraft-android/releases/latest) — LightCraft 0.21.1
+- [pdfcraft-android](https://github.com/physicistlk/pdfcraft-android/releases/latest) — PdfCraft 0.21.1
+- [photocraft-android](https://github.com/physicistlk/photocraft-android/releases/latest) — PhotoCraft 0.23.1
+- [vectorcraft-android](https://github.com/physicistlk/vectorcraft-android/releases/latest) — VectorCraft 0.24.1
 
 ## Credits and licence
 
