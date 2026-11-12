@@ -6,11 +6,11 @@ and egui interface, packaged as a NativeActivity APK for sideloading on arm64 de
 | | |
 |---|---|
 | Upstream project | [`storytold/wordcraft`](https://github.com/storytold/wordcraft) — Apache-2.0 OR MIT |
-| Pinned commit | `5574b326` (upstream version `0.17.0`) |
+| Pinned commit | `079f478b` (upstream version `0.18.1`) |
 | Android package | `ai.storyteller.wordcraft` |
-| Published APK | `wordcraft-0.17.0-arm64-v8a-20261109.apk` — arm64-v8a, signed with a local test key (release **v0.17.0**, 2026-11-09) |
-| APK sha256 | recorded in `SHA256SUMS.txt` beside the built APK |
-| Upstream files changed | 1 file (`Cargo.toml`, the winit patch source) — see [`patches/`](patches/) |
+| Published APK | `wordcraft-0.18.1-arm64-v8a-20261112.apk` — arm64-v8a, signed with a local test key (release **v0.18.1**, 2026-11-12) |
+| APK sha256 | `1efc7d261d49b344e973849ca06a88ba55f9ed56fa6c8fd38b89109659509d19` |
+| Upstream files changed | 277 files: `Cargo.toml` + `Cargo.lock` (the winit patch source and the new crate's lock entry), `apps/wordcraft-android/` (14 files, resources included) and the whole `vendor/winit/` tree — see [`patches/`](patches/) |
 | Vendored crates | `vendor/winit/` — the pinned upstream fork plus the Android wheel/hover fix, copied in with the crate |
 | New port crate | `apps/wordcraft-android/` — the shell crate plus resources |
 
@@ -39,7 +39,7 @@ JDK 21, and `cargo install cargo-apk --version 0.10.0`.
 ```bash
 git clone https://github.com/storytold/wordcraft.git
 cd wordcraft
-git fetch --depth 1 origin 2be33e6d
+git fetch --depth 1 origin 079f478b
 git checkout FETCH_HEAD                        # the exact commit this port targets
 git apply -3 /path/to/0001-wordcraft-android-port.patch
 cp -r /path/to/wordcraft-android/apps/wordcraft-android apps/
@@ -89,7 +89,7 @@ A tick means the check was *run*, not inferred; the wording says how far it goes
 
 | Claim | How it was checked | Result |
 |---|---|---|
-| `patches/…patch` applies to a clean checkout of the pin | fresh `git init` + `git fetch --depth 1 origin 2be33e6d` + `git apply --check` | ✅ applies cleanly |
+| `patches/…patch` applies to a clean checkout of the pin | fresh `git init` + `git fetch --depth 1 origin 079f478b` + `git apply --check` | ✅ applies cleanly |
 | The assembled tree equals the tree the APK was built from | file-by-file SHA-256 (line endings normalised) over every patched file and every file of the port crate | ✅ 12 files identical, none differing |
 | The port crate compiles for Android | `cargo check -p wordcraft-android --target aarch64-linux-android`, run in a tree assembled from scratch (fresh `git fetch` of the pin, patch applied, port crate copied in) | ✅ exit 0 |
 | The port crate's own tests | `cargo test -p wordcraft-android` in the freshly assembled tree | ✅ 16/16 pass |

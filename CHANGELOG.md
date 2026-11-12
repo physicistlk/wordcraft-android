@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.18.1 — 2026-11-12
+
+| | |
+|---|---|
+| APK | `wordcraft-0.18.1-arm64-v8a-20261112.apk` — sha256 `1efc7d261d49b344e973849ca06a88ba55f9ed56fa6c8fd38b89109659509d19` |
+| Built from | upstream `storytold/wordcraft` @ `079f478b` (v0.18.1) |
+| Package | `ai.storyteller.wordcraft` — versionName `0.18.1`, versionCode `16781825`, minSdk 26, targetSdk 35 |
+| ABI | `arm64-v8a` only |
+| Signature | local test key (Mode A); not an official WordCraft key |
+
+
 ## v0.15.1 — 2026-11-04
 
 | | |
