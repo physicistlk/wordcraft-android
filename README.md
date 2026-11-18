@@ -8,10 +8,10 @@ and egui interface, packaged as a NativeActivity APK for sideloading on arm64 de
 | Upstream project | [`storytold/wordcraft`](https://github.com/storytold/wordcraft) — Apache-2.0 OR MIT |
 | Pinned commit | `079f478b` (upstream version `0.18.1`) |
 | Android package | `ai.storyteller.wordcraft` |
-| Published APK | `wordcraft-0.18.1-arm64-v8a-20261112.apk` — arm64-v8a, signed with a local test key (release **v0.18.1**, 2026-11-12) |
-| APK sha256 | `1efc7d261d49b344e973849ca06a88ba55f9ed56fa6c8fd38b89109659509d19` |
+| Published APK | `wordcraft-0.18.1-arm64-v8a-20261118.apk` — arm64-v8a, signed with a local test key (release **v0.18.1**, 2026-11-18) |
+| APK sha256 | `af01b68ec947f050f9c388b154a34364ec8083f80367def69a87f18e30f9a986` |
 | Upstream files changed | 277 files: `Cargo.toml` + `Cargo.lock` (the winit patch source and the new crate's lock entry), `apps/wordcraft-android/` (14 files, resources included) and the whole `vendor/winit/` tree — see [`patches/`](patches/) |
-| Vendored crates | `vendor/winit/` — the pinned upstream fork plus the Android wheel/hover fix, copied in with the crate |
+| Vendored crates | `vendor/winit/` — the pinned upstream fork plus the Android wheel/hover and physical-mouse fixes, copied in with the crate |
 | New port crate | `apps/wordcraft-android/` — the shell crate plus resources |
 
 ## What this repository is

@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.18.1 — 2026-11-18 (physical mouse)
+
+| | |
+|---|---|
+| APK | `wordcraft-0.18.1-arm64-v8a-20261118.apk` — sha256 `af01b68ec947f050f9c388b154a34364ec8083f80367def69a87f18e30f9a986` |
+| Built from | upstream `storytold/wordcraft` @ `079f478b` (v0.18.1, unchanged) |
+| Package | `ai.storyteller.wordcraft` — versionName `0.18.1`, versionCode `16781825`, minSdk 26, targetSdk 35 |
+| ABI | `arm64-v8a` only |
+| Signature | local test key (Mode A); not an official WordCraft key |
+
+### Changed
+- **Physical mouse: right button is a real secondary click.** `vendor/winit`'s Android backend
+  now recognises a real pointer (`Source::Mouse`/`MouseRelative` or `ToolType::Mouse`), tracks its
+  button state and emits `CursorMoved` + `MouseInput` instead of flattening the event into a
+  `Touch`. The right button therefore reads as a true secondary click, and long-press-to-context-menu
+  no longer applies to a mouse (it is egui's touch heuristic and no touch is reported). Devices
+  that report no button state, and every finger event, keep the old touch path unchanged.
+  No app-layer changes were needed.
+
 ## v0.18.1 — 2026-11-12
 
 | | |

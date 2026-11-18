@@ -6,7 +6,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use android_activity::input::{Axis, InputEvent, KeyAction, Keycode, MotionAction};
+use android_activity::input::{
+    Axis, InputEvent, KeyAction, Keycode, MotionAction, Source, ToolType,
+};
 use android_activity::{
     AndroidApp, AndroidAppWaker, ConfigurationRef, InputStatus, MainEvent, Rect,
 };
@@ -143,6 +145,10 @@ pub struct EventLoop<T: 'static> {
     cause: StartCause,
     ignore_volume_keys: bool,
     combining_accent: Option<char>,
+    /// Port patch: which of (left, right, middle) the attached pointer device is holding
+    /// down. Android repeats the button state on every motion event, so the transitions
+    /// are computed by diffing it — see the mouse branch in `handle_input_event`.
+    mouse_buttons: [bool; 3],
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -192,6 +198,7 @@ impl<T: 'static> EventLoop<T> {
             cause: StartCause::Init,
             ignore_volume_keys: attributes.ignore_volume_keys,
             combining_accent: None,
+            mouse_buttons: [false; 3],
         })
     }
 
@@ -448,6 +455,90 @@ impl<T: 'static> EventLoop<T> {
                         return input_status;
                     }
                     _ => {}
+                }
+
+                // Port patch: a physical mouse (or trackpad) is a pointer device, not a
+                // finger. Android reports its buttons through `button_state()` and its
+                // position through the ordinary motion actions, but winit turned every
+                // one of them into a `Touch` event — so egui treated a mouse as a touch
+                // screen: the right button read as a plain tap, and a long press was the
+                // only way to a context menu. Reporting `CursorMoved` + `MouseInput`
+                // instead makes the right button a real secondary click and, because no
+                // touch is reported, egui's long-press-to-secondary heuristic
+                // (`any_touches() && is_long_press()`) stops firing for the mouse.
+                // Fingers keep the old path unchanged.
+                //
+                // The buttons are derived by diffing the reported state rather than
+                // decoded from the action name: Android delivers both ACTION_DOWN/UP and
+                // ACTION_BUTTON_PRESS/RELEASE for one physical click, in no fixed order,
+                // so diffing makes each button change exactly once whichever pair comes
+                // first. If a device reports no button state at all, nothing changes here
+                // and the event falls through to the old touch path — the mouse then
+                // behaves exactly as it did before this patch.
+                let is_mouse = matches!(motion_event.source(), Source::Mouse | Source::MouseRelative)
+                    || matches!(
+                        motion_event.pointer_at_index(motion_event.pointer_index()).tool_type(),
+                        ToolType::Mouse
+                    );
+                let state = motion_event.button_state();
+                let mut now = [state.primary(), state.secondary(), state.teriary()];
+                if matches!(motion_event.action(), MotionAction::Cancel) {
+                    now = [false; 3];
+                }
+                let was = self.mouse_buttons;
+                let held = now.iter().any(|&down| down) || was.iter().any(|&down| down);
+
+                if is_mouse && (now != was || held) {
+                    self.mouse_buttons = now;
+
+                    let pointer = motion_event.pointer_at_index(motion_event.pointer_index());
+                    let position = PhysicalPosition { x: pointer.x() as _, y: pointer.y() as _ };
+
+                    if matches!(
+                        motion_event.action(),
+                        MotionAction::Down
+                            | MotionAction::PointerDown
+                            | MotionAction::Move
+                            | MotionAction::Up
+                            | MotionAction::PointerUp
+                            | MotionAction::ButtonPress
+                            | MotionAction::ButtonRelease
+                    ) {
+                        callback(
+                            event::Event::WindowEvent {
+                                window_id,
+                                event: event::WindowEvent::CursorMoved { device_id, position },
+                            },
+                            self.window_target(),
+                        );
+                    }
+
+                    let buttons = [
+                        event::MouseButton::Left,
+                        event::MouseButton::Right,
+                        event::MouseButton::Middle,
+                    ];
+                    for (index, button) in buttons.into_iter().enumerate() {
+                        if was[index] != now[index] {
+                            callback(
+                                event::Event::WindowEvent {
+                                    window_id,
+                                    event: event::WindowEvent::MouseInput {
+                                        device_id,
+                                        state: if now[index] {
+                                            event::ElementState::Pressed
+                                        } else {
+                                            event::ElementState::Released
+                                        },
+                                        button,
+                                    },
+                                },
+                                self.window_target(),
+                            );
+                        }
+                    }
+
+                    return input_status;
                 }
 
                 let phase = match motion_event.action() {
